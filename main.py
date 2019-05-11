@@ -6,16 +6,17 @@ from dqn_learn import OptimizerSpec, dqn_learing
 from utils.gym import get_env, get_wrapper_by_name
 from utils.schedule import LinearSchedule
 
-BATCH_SIZE = 32
-GAMMA = 0.99
-REPLAY_BUFFER_SIZE = 1000000
-LEARNING_STARTS = 50000
-LEARNING_FREQ = 4
-FRAME_HISTORY_LEN = 4
-TARGER_UPDATE_FREQ = 10000
-LEARNING_RATE = 0.00025
-ALPHA = 0.95
-EPS = 0.01
+BATCH_SIZE = 32  # How many transitions to sample each time experience is replayed.
+GAMMA = 0.99  # Discount factor
+REPLAY_BUFFER_SIZE = 1000000  # Replay buffer size
+LEARNING_STARTS = 50000  # After how many environment steps to start replaying experiences
+LEARNING_FREQ = 4  # How many steps of environment to take between every experience replay
+FRAME_HISTORY_LEN = 4  # How many past frames to include as input to the model.
+TARGER_UPDATE_FREQ = 10000  # How many experience replay rounds (not steps!) to perform between
+                            # each update to the target Q network
+LEARNING_RATE = 0.00025  # Learning rate of the optimizer of the network
+ALPHA = 0.95  # Learning rate of the Q-Learning algorithm
+EPS = 0.01  # Trade-off between exploration and exploitation
 
 def main(env, num_timesteps):
 

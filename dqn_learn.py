@@ -19,6 +19,7 @@ from utils.gym import get_wrapper_by_name
 
 USE_CUDA = torch.cuda.is_available()
 dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+dtype_long = torch.cuda.LongTensor if USE_CUDA else torch.LongTensor
 
 class Variable(autograd.Variable):
     def __init__(self, data, *args, **kwargs):
@@ -110,10 +111,10 @@ def dqn_learing(
     num_actions = env.action_space.n
 
     # Construct an epilson greedy policy with given exploration schedule
-    def select_epilson_greedy_action(model, obs, t):
+    def select_epilson_greedy_action(model, obs, t, learning_starts):
         sample = random.random()
         eps_threshold = exploration.value(t)
-        if sample > eps_threshold:
+        if t > learning_starts and sample > eps_threshold:
             obs = torch.from_numpy(obs).type(dtype).unsqueeze(0) / 255.0
             # Use volatile = True if variable is only used in inference mode, i.e. don’t save the history
             return model(Variable(obs, volatile=True)).data.max(1)[1].cpu()
@@ -124,7 +125,9 @@ def dqn_learing(
     ######
 
     # YOUR CODE HERE
-
+    Q = q_func(in_channels=input_arg, num_actions=num_actions).type(dtype)
+    target_Q = q_func(in_channels=input_arg, num_actions=num_actions).type(dtype)
+    target_Q.load_state_dict(Q.state_dict())  # clone network
     ######
 
 
@@ -180,7 +183,16 @@ def dqn_learing(
         #####
 
         # YOUR CODE HERE
-
+        # Push last_obs to replay buffer
+        idx = replay_buffer.store_frame(last_obs)
+        # explore vs exploit
+        action = select_epilson_greedy_action(Q, replay_buffer.encode_recent_observation(), t, learning_starts)
+        # Step the environment
+        last_obs, reward, done, _ = env.step(action)
+        # Update replay buffer with action, reward and new obs
+        replay_buffer.store_effect(idx, action, reward, done)
+        if done:
+            last_obs = env.reset()
         #####
 
         # at this point, the environment should have been advanced one step (and
@@ -218,7 +230,34 @@ def dqn_learing(
             #####
 
             # YOUR CODE HERE
+            obs_batch, act_batch, rew_batch, next_obs_batch, done_mask = replay_buffer.sample(batch_size)
+            # convert to tensors
+            obs_batch = Variable(torch.from_numpy(obs_batch).type(dtype)) / 255.0
+            act_batch = Variable(torch.from_numpy(act_batch)).type(dtype_long)
+            rew_batch = Variable(torch.from_numpy(rew_batch)).type(dtype)
+            next_obs_batch = Variable(torch.from_numpy(next_obs_batch).type(dtype)) / 255.0
+            done_mask = Variable(~(torch.from_numpy(done_mask).type(dtype_long))).type(dtype)
+            # get current Q values from Q net and Target Q values from Target net
+            current = Q(obs_batch)
+            current = current.gather(1, act_batch.unsqueeze(1)).squeeze()
+            target = target_Q(next_obs_batch).max(1)[0]
+            # Mask post terminal
+            target = done_mask * target.type(dtype)
+            target = rew_batch + (gamma * target)
+            # Compute the Bellman error
+            d_error = target - current
+            # Clip the error between [-1,1] Multiply it by -1
+            d_error = (-1) * d_error.clamp(-1, 1)
 
+            # Back propagate the error
+            optimizer.zero_grad()
+            current.backward(d_error)
+            optimizer.step()
+            num_param_updates += 1
+
+            # Update target network
+            if num_param_updates % target_update_freq == 0:
+                target_Q.load_state_dict(Q.state_dict())
             #####
 
         ### 4. Log progress and keep track of statistics
